@@ -92,10 +92,10 @@ pub(crate) use std::collections::hash_map::Entry;
 pub const DEFAULT_ANON_FIELDS_PREFIX: &str = "__bindgen_anon_";
 
 fn file_is_cpp(name_file: &str) -> bool {
-    name_file.ends_with(".hpp") ||
-        name_file.ends_with(".hxx") ||
-        name_file.ends_with(".hh") ||
-        name_file.ends_with(".h++")
+    name_file.ends_with(".hpp")
+        || name_file.ends_with(".hxx")
+        || name_file.ends_with(".hh")
+        || name_file.ends_with(".h++")
 }
 
 fn args_are_cpp(clang_args: &[String]) -> bool {
@@ -262,8 +262,8 @@ impl Builder {
         // FIXME(emilio): This is a bit hacky, maybe we should stop re-using the
         // RustFeatures to store the "disable_untagged_union" call, and make it
         // a different flag that we check elsewhere / in generate().
-        if !self.options.rust_features.untagged_union &&
-            RustFeatures::from(self.options.rust_target).untagged_union
+        if !self.options.rust_features.untagged_union
+            && RustFeatures::from(self.options.rust_target).untagged_union
         {
             output_vector.push("--disable-untagged-union".into());
         }
@@ -1129,6 +1129,15 @@ impl Builder {
         self
     }
 
+    /// Pass a different target triple to clang than cargo target
+    pub fn target_override<T>(mut self, target: T) -> Builder
+    where
+        T: Into<String>,
+    {
+        self.options.target_override = Some(target.into());
+        self
+    }
+
     /// Emit bindings for builtin definitions (for example `__builtin_va_list`)
     /// in the generated Rust.
     pub fn emit_builtins(mut self) -> Builder {
@@ -1873,6 +1882,9 @@ struct BindgenOptions {
     /// The set of arguments to pass straight through to Clang.
     clang_args: Vec<String>,
 
+    /// Target triple to pass to clang in place of rust triple
+    target_override: Option<String>,
+
     /// The input header file.
     input_header: Option<String>,
 
@@ -2117,6 +2129,7 @@ impl Default for BindgenOptions {
             raw_lines: vec![],
             module_lines: HashMap::default(),
             clang_args: vec![],
+            target_override: None,
             input_header: None,
             extra_input_headers: vec![],
             input_unsaved_files: vec![],
@@ -2288,7 +2301,11 @@ impl Bindings {
         options.build();
 
         let (effective_target, explicit_target) =
-            find_effective_target(&options.clang_args);
+            if let Some(target_override) = &options.target_override {
+                (target_override.clone(), true)
+            } else {
+                find_effective_target(&options.clang_args)
+            };
 
         let is_host_build =
             rust_to_clang_target(HOST_TARGET) == effective_target;
@@ -2331,8 +2348,8 @@ impl Bindings {
                             return false;
                         }
 
-                        if arg.starts_with("-I") ||
-                            arg.starts_with("--include-directory=")
+                        if arg.starts_with("-I")
+                            || arg.starts_with("--include-directory=")
                         {
                             return false;
                         }
@@ -2359,8 +2376,8 @@ impl Bindings {
             debug!("Found clang: {:?}", clang);
 
             // Whether we are working with C or C++ inputs.
-            let is_cpp = args_are_cpp(&options.clang_args) ||
-                options.input_header.as_deref().map_or(false, file_is_cpp);
+            let is_cpp = args_are_cpp(&options.clang_args)
+                || options.input_header.as_deref().map_or(false, file_is_cpp);
 
             let search_paths = if is_cpp {
                 clang.cpp_search_paths
